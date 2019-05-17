@@ -28,17 +28,21 @@ def create_random_tuples_with_coordinates(num_of_caches, num_of_clients):
     return F, clients, c
 
 
-def plot(F, D, clients):
+def plot(F, D, clients, distributions):
     trace1_x = []
     trace1_y = []
     trace2_x = []
     trace2_y = []
     colors = []
+    texts = []
 
     for cache in F:
         trace2_x.append(cache[3])
         trace2_y.append(cache[4])
         colors.append(0)
+        texts.append("# of connections: 0")
+    for distribution in distributions:
+        texts[distribution[0]] = "# of connections: {}".format(distribution[1])
     for idx, connection in enumerate(D):
         trace2_x.append(clients[idx][0])
         trace2_y.append(clients[idx][1])
@@ -81,8 +85,7 @@ def plot(F, D, clients):
             "size": 8
         },
         "mode": "markers",
-        "text": ["# of connections: 9", "# of connections: 9", "# of connections: 13", "# of connections: 4",
-                 "# of connections: 2", "# of connections: 10", "# of connections: 11", "# of connections: 9"],
+        "text": texts,
         "type": "scatter"
     }
     data = Data([trace1, trace2])
@@ -204,7 +207,7 @@ def simulate(num_of_caches, num_of_clients):
     # print("Total cost / best cost: {0}".format(ratio))
 
     print("Caches: {0}, Clients: {1}".format(F, clients))
-    plot(F, D, clients)
+    plot(F, D, clients, distribution_of_caches)
     # return final_cost, all_costs, ratio
     # return final_cost, D, num_of_placed_caches, distribution_of_caches
 
