@@ -1,6 +1,9 @@
 import itertools
 import random
 import cProfile
+import math
+import plotly.plotly as py
+from plotly.graph_objs import *
 
 
 def create_random_tuples(num_of_caches, num_of_clients):
@@ -11,10 +14,114 @@ def create_random_tuples(num_of_caches, num_of_clients):
     :return:
     """
 
-    F = [[0, int(random.random() * 25) + 5, 0] for _ in range(0, num_of_caches)]
+    F = [[0, 25, 0] for _ in range(0, num_of_caches)]
     c = [[int(random.random() * 15) + 2 for _ in range(0, num_of_clients)] for _ in range(0, num_of_caches)]
 
     return F, c
+
+
+def create_random_tuples_with_coordinates(num_of_caches, num_of_clients):
+    F = [[0, 500, 0, int(random.random() * 100), int(random.random() * 100)] for _ in range(0, num_of_caches)]
+    clients = [[int(random.random() * 100), int(random.random() * 100)] for _ in range(0, num_of_clients)]
+    c = [[int(math.sqrt((cache[3] - client[0]) ** 2 + (cache[4] - client[1]) ** 2)) for client in clients] for cache in F]
+
+    return F, clients, c
+
+
+def plot(F, D, clients):
+    trace1_x = []
+    trace1_y = []
+    trace2_x = []
+    trace2_y = []
+    colors = []
+
+    for cache in F:
+        trace2_x.append(cache[3])
+        trace2_y.append(cache[4])
+        colors.append(0)
+    for idx, connection in enumerate(D):
+        trace2_x.append(clients[idx][0])
+        trace2_y.append(clients[idx][1])
+        colors.append(10)
+        trace1_x.append(clients[idx][0])
+        trace1_y.append(clients[idx][1])
+        trace1_x.append(F[connection][3])
+        trace1_y.append(F[connection][4])
+        trace1_x.append(None)
+        trace1_y.append(None)
+
+    py.sign_in('username', 'api_key')  # plotly credentials
+    trace1 = {
+        "x": trace1_x,
+        "y": trace1_y,
+        "hoverinfo": "none",
+        "line": {
+            "color": "#888",
+            "width": 0.5
+        },
+        "mode": "lines",
+        "type": "scatter"
+    }
+    trace2 = {
+        "x": trace2_x,
+        "y": trace2_y,
+        "hoverinfo": "text",
+        "marker": {
+            "color": colors,
+            "colorbar": {
+                "thickness": 15,
+                "title": "Node Connections",
+                "titleside": "right",
+                "xanchor": "left"
+            },
+            "colorscale": [[0, 'white'], [1.0, 'rgb(0, 0, 255)']],
+            "line": {"width": 2},
+            "reversescale": True,
+            "showscale": True,
+            "size": 8
+        },
+        "mode": "markers",
+        "text": ["# of connections: 9", "# of connections: 9", "# of connections: 13", "# of connections: 4",
+                 "# of connections: 2", "# of connections: 10", "# of connections: 11", "# of connections: 9"],
+        "type": "scatter"
+    }
+    data = Data([trace1, trace2])
+    layout = {
+        "annotations": [
+            {
+                "x": 0.005,
+                "y": -0.002,
+                "showarrow": False,
+                "text": "Python code: <a href='https://plot.ly/ipython-notebooks/network-graphs/'> https://plot.ly/ipython-notebooks/network-graphs/</a>",
+                "xref": "paper",
+                "yref": "paper"
+            }
+        ],
+        "height": 650,
+        "hovermode": "closest",
+        "margin": {
+            "r": 5,
+            "t": 40,
+            "b": 20,
+            "l": 5
+        },
+        "showlegend": False,
+        "title": "<br>Network graph made with Python",
+        "titlefont": {"size": 16},
+        "width": 650,
+        "xaxis": {
+            "showgrid": False,
+            "showticklabels": False,
+            "zeroline": False
+        },
+        "yaxis": {
+            "showgrid": False,
+            "showticklabels": False,
+            "zeroline": False
+        }
+    }
+    fig = Figure(data=data, layout=layout)
+    plot_url = py.plot(fig)
 
 
 def total_cost(F, c, D):
@@ -48,7 +155,7 @@ def simulate(num_of_caches, num_of_clients):
     D = [None for _ in range(0, num_of_clients)]
     v = [0 for _ in range(0, num_of_clients)]
     w = [[[0, 0] for _ in range(0, num_of_clients)] for _ in range(0, num_of_caches)]
-    F, c = create_random_tuples(num_of_caches, num_of_clients)
+    F, clients, c = create_random_tuples_with_coordinates(num_of_caches, num_of_clients)
 
     has_unconnected_client = None in D
     time = 0
@@ -95,9 +202,11 @@ def simulate(num_of_caches, num_of_clients):
     # print("All costs: {0}".format(all_costs))
     # ratio = final_cost / all_costs[0][0]
     # print("Total cost / best cost: {0}".format(ratio))
-    #
+
+    print("Caches: {0}, Clients: {1}".format(F, clients))
+    plot(F, D, clients)
     # return final_cost, all_costs, ratio
-    return final_cost, D, num_of_placed_caches, distribution_of_caches
+    # return final_cost, D, num_of_placed_caches, distribution_of_caches
 
 
 def freq(lst):
@@ -157,7 +266,7 @@ if __name__ == '__main__':
     pr = cProfile.Profile()
     pr.enable()
 
-    simulate(100, 5000)
+    simulate(50, 500)
 
     pr.disable()
     pr.print_stats(sort='time')
