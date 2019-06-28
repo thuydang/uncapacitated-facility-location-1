@@ -1,6 +1,5 @@
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
-#include "ns3/csma-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/applications-module.h"
@@ -22,117 +21,121 @@ using namespace ns3;
 using namespace std;
 
 NS_LOG_COMPONENT_DEFINE ("FirstExample");
-const int NUM_OF_SERVERS = 10;
-const int NUM_OF_NODES = 50;
+const int NUM_OF_SERVERS = 14;
+const int NUM_OF_NODES = 100;
+const int NUM_OF_REQUESTS_PER_CLIENT = 2;
 
-vector<string> allCaches;
-vector<string> combination;
-vector<vector<string>> allCombinations;
+vector<int> combination;
+vector<vector<int>> allCombinations;
+AnimationInterface* anim = 0;
+uint32_t resourceOnlineCloudId;
+uint32_t resourceOfflineCloudId;
+uint32_t resourceClientId;
 
-class Client {
+class Request {
 public:
-	string nodeKey;
-	string cacheKey;
+	int from, to;
+	int cacheKey;
 
-	Client(string nodeKey) {
-		this->nodeKey = nodeKey;
-		cacheKey = "";
+	Request() {
+		this->from = -1;
+		this->to = -1;
+		cacheKey = -1;
+	}
+
+	Request(int from, int to) {
+		this->from = from;
+		this->to = to;
+		cacheKey = -1;
 	}
 };
 
 class Cache {
 public:
-	string nodeKey;
+	int nodeKey;
 	int initialCost;
 	int totalOffer;
 	bool isOpen;
 
-	Cache(string nodeKey) {
+	Cache(int nodeKey) {
 		this->nodeKey = nodeKey;
 		initialCost = 5;
 		totalOffer = 0;
 		isOpen = false;
 	}
 };
+vector<Cache> caches;
 
-int getClosestServerIdx(int nodeIdx, int NUM_OF_SERVERS, int pos[][2]) {
-	double minDistance = std::numeric_limits<double>::max();
-	int closestServerIdx = 0;
+//int getClosestServerIdx(int nodeIdx, int NUM_OF_SERVERS, int pos[][2]) {
+//	double minDistance = std::numeric_limits<double>::max();
+//	int closestServerIdx = 0;
+//
+//	for (uint8_t i = 0; i < NUM_OF_SERVERS; i++) {
+//		double curDistance = sqrt(pow(pos[nodeIdx][0] - pos[i][0], 2) + pow(pos[nodeIdx][1] - pos[i][1], 2));
+//		if (curDistance < minDistance) {
+//			minDistance = curDistance;
+//			closestServerIdx = i;
+//		}
+//	}
+//	return closestServerIdx;
+//}
 
-	for (uint8_t i = 0; i < NUM_OF_SERVERS; i++) {
-		double curDistance = sqrt(pow(pos[nodeIdx][0] - pos[i][0], 2) + pow(pos[nodeIdx][1] - pos[i][1], 2));
-		if (curDistance < minDistance) {
-			minDistance = curDistance;
-			closestServerIdx = i;
-		}
-	}
-	return closestServerIdx;
-}
-
-vector<string> simulate(vector<Client> clients, vector<Cache> caches, map<string, map<string, int>> numberOfHops) {
-	uint32_t lenClients = clients.size();
+vector<Request> simulate(vector<Request> requests, vector<vector<int>> numberOfHops) {
+	uint32_t lenRequests = requests.size();
 	uint32_t lenCaches = caches.size();
-	int v[lenClients];
-	std::fill(v, v + lenClients, 0);
+	int v[lenRequests];
+	std::fill(v, v + lenRequests, 0);
 
-	int w[lenCaches][lenClients][2];
+	int w[lenCaches][lenRequests][2];
 	for (uint32_t i = 0; i < lenCaches; i++) {
-		for (uint32_t k = 0; k < lenClients; k++) {
+		for (uint32_t k = 0; k < lenRequests; k++) {
 			w[i][k][0] = 0;
 			w[i][k][1] = 0;
 		}
 	}
 
-	bool hasUnconnectedClient = false;
-	for (uint32_t i = 0; i < lenClients; i++) {
-		if (clients[i].cacheKey == "") {
-			hasUnconnectedClient = true;
+	bool hasUnconnectedRequest = false;
+	for (uint32_t i = 0; i < lenRequests; i++) {
+		if (requests[i].cacheKey == -1) {
+			hasUnconnectedRequest = true;
 			break;
 		}
 	}
 
 	int time = 0;
-	while (hasUnconnectedClient) {
+	while (hasUnconnectedRequest) {
 		time++;
-		for (uint32_t j = 0; j < lenClients; j++) {
-			if (clients[j].cacheKey == "") {
+		for (uint32_t j = 0; j < lenRequests; j++) {
+			if (requests[j].cacheKey == -1) {
 				v[j]++;
 			}
 			for (uint32_t i = 0; i < lenCaches; i++) {
-				ostringstream i2Str, j2Str;
-				i2Str << caches[i].nodeKey;
-				j2Str << clients[j].nodeKey;
-				if (!caches[i].isOpen && clients[j].cacheKey == "" && numberOfHops[j2Str.str()][i2Str.str()] == v[j]) {
+				if (!caches[i].isOpen && requests[j].cacheKey == -1 && numberOfHops[j][caches[i].nodeKey] == v[j]) {
 					w[i][j][1] = 1;
 				}
-				if (clients[j].cacheKey == "" && w[i][j][1] == 1) {
+				if (requests[j].cacheKey == -1 && w[i][j][1] == 1) {
 					w[i][j][0]++;
 					caches[i].totalOffer++;
 				}
 				if (!caches[i].isOpen && caches[i].initialCost == caches[i].totalOffer) {
 					caches[i].isOpen = true;
-					for (uint32_t j2 = 0; j2 < lenClients; j2++) {
+					for (uint32_t j2 = 0; j2 < lenRequests; j2++) {
 						if (w[i][j2][0] > 0) {
-							clients[j2].cacheKey = caches[i].nodeKey;
+							requests[j2].cacheKey = caches[i].nodeKey;
 							for (uint32_t i2 = 0; i2 < lenCaches; i2++) {
-								ostringstream i22Str, j22Str;
-								i22Str << caches[i2].nodeKey;
-								j22Str << clients[j2].nodeKey;
 								int temp = w[i2][j2][0];
-								int diff = numberOfHops[j22Str.str()][i2Str.str()] - numberOfHops[j22Str.str()][i22Str.str()];
+								int diff = numberOfHops[j2][caches[i].nodeKey] - numberOfHops[j2][caches[i2].nodeKey];
 								w[i2][j2][0] = max(0, diff);
 								caches[i2].totalOffer += w[i2][j2][0] - temp;
 							}
 						}
 					}
 				}
-				if (caches[i].isOpen && clients[j].cacheKey == "" && numberOfHops[j2Str.str()][i2Str.str()] == v[j]) {
-					clients[j].cacheKey = caches[i].nodeKey;
+				if (caches[i].isOpen && requests[j].cacheKey == -1 && numberOfHops[j][caches[i].nodeKey] == v[j]) {
+					requests[j].cacheKey = caches[i].nodeKey;
 					for (uint32_t i2 = 0; i2 < lenCaches; i2++) {
-						ostringstream i22Str;
-						i22Str << caches[i2].nodeKey;
 						int temp = w[i2][j][0];
-						int diff = numberOfHops[j2Str.str()][i2Str.str()] - numberOfHops[j2Str.str()][i22Str.str()];
+						int diff = numberOfHops[j][caches[i].nodeKey] - numberOfHops[j][caches[i2].nodeKey];
 						w[i2][j][0] = max(0, diff);
 						caches[i2].totalOffer += w[i2][j][0] - temp;
 					}
@@ -141,42 +144,75 @@ vector<string> simulate(vector<Client> clients, vector<Cache> caches, map<string
 
 		}
 
-		hasUnconnectedClient = false;
-		for (uint32_t i = 0; i < lenClients; i++) {
-			if (clients[i].cacheKey == "") {
-				hasUnconnectedClient = true;
+		hasUnconnectedRequest = false;
+		for (uint32_t i = 0; i < lenRequests; i++) {
+			if (requests[i].cacheKey == -1) {
+				hasUnconnectedRequest = true;
 				break;
 			}
 		}
 		printf("Time: %d\n", time);
 	}
 
-	vector<string> client2Cache;
-	for (uint32_t i = 0; i < lenClients; i++) {
-		client2Cache.push_back(clients[i].cacheKey);
-	}
-	return client2Cache;
+//	for (uint32_t i = 0; i < lenPairs; i++) {
+//		clients[pairs[i].second].cacheKey = clients[pairs[i].first].cacheKey;
+//	}
+	return requests;
 }
 
-vector<string> findShortestPath(std::map<string, vector<string>> graphDict, string start, string end, vector<string> path) {
-	path.push_back(start);
-	if (start == end) {
-		return path;
+int minDistance(vector<int> dist, bool sptSet[], int numOfNodes) {
+   // Initialize min value
+   int min = INT_MAX, min_index;
+
+   for (int v = 0; v < numOfNodes; v++)
+     if (sptSet[v] == false && dist[v] <= min)
+         min = dist[v], min_index = v;
+
+   return min_index;
+}
+
+vector<vector<int>> dijkstra(vector<vector<int>> graph, int src, int numOfNodes) {
+	vector<int> dist(numOfNodes);     // The output array.  dist[i] will hold the shortest
+	vector<vector<int>> path(numOfNodes);
+	// distance from src to i
+
+	bool sptSet[numOfNodes]; // sptSet[i] will be true if vertex i is included in shortest
+	// path tree or shortest distance from src to i is finalized
+
+	// Initialize all distances as INFINITE and stpSet[] as false
+	for (int i = 0; i < numOfNodes; i++) {
+		dist[i] = INT_MAX, sptSet[i] = false;
+		//path[i].push_back(-1);
 	}
-	if (graphDict.find(start) == graphDict.end()) {
-		return vector<string>();
-	}
-	vector<string> shortest;
-	for (uint8_t i = 0; i < graphDict[start].size(); i++) {
-		string node = graphDict[start][i];
-		if (std::find(path.begin(), path.end(), node) == path.end()) {
-			vector<string> newPath = findShortestPath(graphDict, node, end, path);
-			if (!newPath.empty() && (shortest.empty() || newPath.size() < shortest.size())) {
-				shortest = newPath;
+
+	// Distance of source vertex from itself is always 0
+	dist[src] = 0;
+
+	// Find shortest path for all vertices
+	for (int count = 0; count < numOfNodes-1; count++) {
+		// Pick the minimum distance vertex from the set of vertices not
+		// yet processed. u is always equal to src in the first iteration.
+		int u = minDistance(dist, sptSet, numOfNodes);
+
+		// Mark the picked vertex as processed
+		sptSet[u] = true;
+
+		// Update dist value of the adjacent vertices of the picked vertex.
+		for (int v = 0; v < numOfNodes; v++) {
+			// Update dist[v] only if is not in sptSet, there is an edge from
+			// u to v, and total weight of path from src to  v through u is
+			// smaller than current value of dist[v]
+
+			if (!sptSet[v] && graph[u][v] && dist[u] != INT_MAX && dist[u]+graph[u][v] < dist[v]) {
+				dist[v] = dist[u] + graph[u][v];
+				path[v] = path[u];
+				path[v].push_back(u);
 			}
 		}
 	}
-	return shortest;
+
+	// print the constructed distance array
+	return path;
 }
 
 void getCombinations(int offset, int k) {
@@ -184,60 +220,153 @@ void getCombinations(int offset, int k) {
 		allCombinations.push_back(combination);
 		return;
 	}
-	for (uint32_t i = offset; i <= allCaches.size() - k; i++) {
-		combination.push_back(allCaches[i]);
+	for (uint32_t i = offset; i <= caches.size() - k; i++) {
+		combination.push_back(i);
 		getCombinations(i+1, k-1);
 		combination.pop_back();
 	}
 }
 
-vector<int> getAllCosts(vector<Client> clients, vector<Cache> caches, map<string, map<string, int>> c) {
-	for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
-		getCombinations(0, i+1);
-	}
-	vector<int> allCosts;
-	for (uint32_t i = 0; i < allCombinations.size(); i++) {
-		vector<string> D2 (clients.size());
-		fill(D2.begin(), D2.end(), "");
-		for (uint32_t j = 0; j < D2.size(); j++) {
-			for (uint32_t k = 0; k < caches.size(); k++) {
-				for (uint32_t l = 0; l < allCombinations[i].size(); l++) {
-					if (caches[k].nodeKey == allCombinations[i][l]) {
-						if (D2[j] == "" || c[caches[k].nodeKey][clients[j].nodeKey] < c[D2[j]][clients[j].nodeKey])
-							D2[j] = caches[k].nodeKey;
-					}
-				}
-			}
-		}
+//vector<int> getAllCosts(vector<vector<int>> c) {
+//	for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
+//		getCombinations(0, i+1);
+//	}
+//	vector<int> allCosts;
+//	for (uint32_t i = 0; i < allCombinations.size(); i++) {
+//		vector<int> D2 (requests.size());
+//		fill(D2.begin(), D2.end(), -1);
+//		for (uint32_t j = 0; j < D2.size(); j++) {
+//			for (uint32_t k = 0; k < caches.size(); k++) {
+//				for (uint32_t l = 0; l < allCombinations[i].size(); l++) {
+//					if (caches[k].nodeKey == allCombinations[i][l]) {
+//						if (D2[j] == -1 || c[j][caches[k].nodeKey]< c[j][D2[j]])
+//							D2[j] = caches[k].nodeKey;
+//					}
+//				}
+//			}
+//		}
+//
+//		int cost = 0;
+//		for (uint32_t j = 0; j < allCombinations[i].size(); j++) {
+//			cost += caches[j].initialCost;
+//		}
+//		for (uint32_t j = 0; j < D2.size(); j++) {
+//			if (D2[j] != -1) {
+//				cost += c[j][D2[j]];
+//			}
+//		}
+//		if (cost > 0)
+//			allCosts.push_back(cost);
+//	}
+//	return allCosts;
+//}
+//
+//int getTotalCost(vector<vector<int>> c) {
+//	int cost = 0;
+//	for (uint32_t i = 0; i < caches.size(); i++) {
+//		if (caches[i].isOpen)
+//			cost += caches[i].initialCost;
+//	}
+//	for (uint32_t i = 0; i < requests.size(); i++) {
+//		if (requests[i].cacheKey != -1) {
+//			cost += c[i][requests[i].cacheKey];
+//		}
+//	}
+//	return cost;
+//}
 
-		int cost = 0;
-		for (uint32_t j = 0; j < allCombinations[i].size(); j++) {
-			cost += caches[j].initialCost;
+vector<vector<int>> createScaleFreeNetwork(uint32_t N, uint32_t m0) {
+	uint32_t k_tot = 0; //d = 3;
+	double a = 1.22;
+	vector<int> G;
+	vector<int> k (N);
+	vector<vector<int>> adj (N, vector<int>(N));
+	int numOfNodes = m0;
+
+    //nodes.Create(m0);
+
+    for (uint32_t i = 0; i < m0; i++) {
+    	G.push_back(i);
+    }
+
+	for (uint32_t i = 0; i < m0; i++) {
+		for (uint32_t j = i + 1; j < m0; j++) {
+			//p2p.Install(nodes.Get(i), nodes.Get(j));
+			adj[i][j] = 1;
+			adj[j][i] = 1;
+			k[i]++;
+			k[j]++;
+			k_tot += 2;
 		}
-		for (uint32_t j = 0; j < D2.size(); j++) {
-			if (D2[j] != "") {
-				cost += c[D2[j]][clients[j].nodeKey];
+	}
+
+	while (G.size() < N) {
+		//nodes.Add(node);
+		numOfNodes++;
+		uint32_t i = numOfNodes - 1;
+		uint32_t numOfAdjs = 0;
+		for (uint32_t k = 0; k < N; k++) {
+			if (adj[i][k] == 1) {
+				numOfAdjs++;
 			}
 		}
-		if (cost > 0)
-			allCosts.push_back(cost);
+		while (numOfAdjs < m0) {
+			uint32_t j = rand() % G.size();
+			double P = pow(double(k[j]) / k_tot, a);
+			double R = static_cast <double> (rand()) / static_cast <double> (RAND_MAX);
+			if (P > R && (i < NUM_OF_SERVERS || j < NUM_OF_SERVERS)) {  // ??
+				//p2p.Install(nodes.Get(i), nodes.Get(j));
+				adj[i][j] = 1;
+				adj[j][i] = 1;
+				numOfAdjs++;
+				k[i]++;
+				k[j]++;
+				k_tot += 2;
+			}
+		}
+		G.push_back(i);
 	}
-	return allCosts;
+
+	return adj;
 }
 
-int getTotalCost(vector<Cache> caches, map<string, map<string, int>> c, vector<string> client2Cache) {
-	int cost = 0;
-	for (uint32_t i = 0; i < caches.size(); i++) {
-		cost += caches[i].initialCost;
+vector<Request> getRandomRequests(uint32_t begin, uint32_t end) {
+	vector<int> numbers(end-begin);
+	for (uint32_t i = 0; i < end - begin; i++) {
+		numbers[i] = i + begin;
 	}
-	for (uint32_t i = 0; i < client2Cache.size(); i++) {
-		if (client2Cache[i] != "") {
-			ostringstream i2Str;
-			i2Str << i;
-			cost += c[i2Str.str()][client2Cache[i]];
+	random_shuffle(numbers.begin(), numbers.end());
+
+	vector<Request> requests;
+	for (uint32_t i = 0; i < numbers.size() - NUM_OF_REQUESTS_PER_CLIENT; i += 1) {
+		for (uint32_t j = 0; j < NUM_OF_REQUESTS_PER_CLIENT; j++)
+			requests.push_back(Request(numbers[i], numbers[i+j+1]));
+	}
+
+	return requests;
+}
+
+void updateNodeColors(bool turnOn) {
+	if (turnOn) {
+		for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
+			if (caches[i].isOpen)
+				anim->UpdateNodeImage(i, resourceOnlineCloudId);
 		}
 	}
-	return cost;
+	else {
+		for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
+			anim->UpdateNodeImage(i, resourceOfflineCloudId);
+		}
+	}
+}
+
+void updateNodeSizes(vector<int> args) {
+	for (uint32_t i = 0; i < NUM_OF_NODES; i++) {
+		anim->UpdateNodeSize(i, 20, 20);
+	}
+	for (uint32_t i = 0; i < args.size(); i++) {
+		anim->UpdateNodeSize(args[i], 35, 35);
+	}
 }
 
 int main(int argc, char *argv[])
@@ -245,48 +374,31 @@ int main(int argc, char *argv[])
     LogComponentEnable ("UdpEchoClientApplication", LOG_LEVEL_INFO);
     LogComponentEnable ("UdpEchoServerApplication", LOG_LEVEL_INFO);
 
-    NodeContainer nodes;
-    nodes.Create(NUM_OF_NODES);
     // create link
     PointToPointHelper p2p;
     p2p.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
     p2p.SetChannelAttribute ("Delay", StringValue ("2ms"));
 
+    Ipv4AddressHelper ipv4;
+	//Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting", BooleanValue(false));
+    srand(5);
+
+	vector<vector<int>> adjMatrix = createScaleFreeNetwork(NUM_OF_NODES, NUM_OF_SERVERS/4);
+	NodeContainer nodes;
+	nodes.Create(NUM_OF_NODES);
+
+	vector<Request> requests = getRandomRequests(0, NUM_OF_NODES-NUM_OF_SERVERS);
+
+	vector<vector<Ipv4InterfaceContainer>> interfaceVector(NUM_OF_NODES, vector<Ipv4InterfaceContainer>(NUM_OF_NODES));
     // create internet stack
     InternetStackHelper internet;
-    internet.Install (nodes);
-
-    Ipv4AddressHelper ipv4;
-	Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting", BooleanValue(true));
-	Ipv4GlobalRoutingHelper::PopulateRoutingTables();
-
-    vector<Cache> caches;
-    vector<Client> clients;
-
-    int adjMatrix[NUM_OF_SERVERS][NUM_OF_SERVERS];
-    for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
-        for (uint32_t j = 0; j < NUM_OF_SERVERS; j++) {
-        	adjMatrix[i][j] = 0;
-        }
-    }
-
-	srand(1);
-	bool again = true;
-	vector<int> randCandidates;
-	for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
-		randCandidates.push_back(i);
-	}
+    internet.Install(nodes);
 
 	uint32_t ipCounter3 = 0, ipCounter2 = 0, ipCounter1 = 0, ipCounter0 = 0;
-	while (again) {
-		for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
-			uint32_t randIdx = rand() % randCandidates.size();
-			uint32_t randInt = randCandidates[randIdx];
-			if (i != randInt && adjMatrix[i][randInt] == 0) {
-				ostringstream i2Str, randIntToStr;
-				i2Str << i;
-				randIntToStr << randInt;
-				NetDeviceContainer devices = p2p.Install(nodes.Get(i), nodes.Get(randInt));
+	for (uint32_t i = 0; i < NUM_OF_NODES; i++) {
+		for (uint32_t j = 0; j < NUM_OF_NODES; j++) {
+			if (adjMatrix[i][j] == 1) {
+				NetDeviceContainer devices = p2p.Install(nodes.Get(i), nodes.Get(j));
 
 				if (ipCounter1 < 255)
 					ipCounter1++;
@@ -303,205 +415,111 @@ int main(int argc, char *argv[])
 				ipStream << ".";
 				ipStream << ipCounter0;
 
-				ipv4.SetBase (ns3::Ipv4Address(ipStream.str().c_str()), "255.255.255.0");
-				Ipv4InterfaceContainer interfaces = ipv4.Assign (devices);
-				Ipv4GlobalRoutingHelper::RecomputeRoutingTables();
-
-				adjMatrix[i][randInt] = 1;
-				adjMatrix[randInt][i] = 1;
-				for (uint32_t k = 0; k < NUM_OF_SERVERS; k++) {
-					if (k != randInt && adjMatrix[i][k] != 0 && adjMatrix[k][randInt] != 1) {
-						adjMatrix[k][randInt] = 2;
-						adjMatrix[randInt][k] = 2;
-
-					}
-				}
-			}
-		}
-
-		again = false;
-		for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
-			bool hasPath = true;
-			for (uint32_t k = 0; k < NUM_OF_SERVERS; k++) {
-				if (i != k && adjMatrix[i][k] == 0) {
-					hasPath = false;
-					again = true;
-				}
-			}
-			if (hasPath) {
-				std::vector<int>::iterator position = std::find(randCandidates.begin(), randCandidates.end(), i);
-				if (position != randCandidates.end())
-					randCandidates.erase(position);
+				ipv4.SetBase(ns3::Ipv4Address(ipStream.str().c_str()), "255.255.255.0");
+				Ipv4InterfaceContainer interfaces = ipv4.Assign(devices);
+				interfaceVector[i][j] = interfaces;
 			}
 		}
 	}
 
 	int positions[NUM_OF_NODES][2];
 	for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
-		uint32_t rand_x = rand() % 50 + 25;
-		uint32_t rand_y = rand() % 50 + 25;
+		uint32_t rand_x = rand() % 1000 + 10;
+		uint32_t rand_y = rand() % 500 + 10;
 		positions[i][0] = rand_x;
 		positions[i][1] = rand_y;
 
-		ostringstream i2Str;
-		i2Str << i;
-		caches.push_back(Cache(i2Str.str()));
+		caches.push_back(Cache(i));
 
 		UdpEchoServerHelper echoServer(9999);
-		ApplicationContainer serverApps = echoServer.Install (nodes.Get(i));
-		serverApps.Start (Seconds (1.0));
-		serverApps.Stop (Seconds (1000.0));
+		ApplicationContainer serverApps = echoServer.Install(nodes.Get(i));
+		serverApps.Start(Seconds(1.0));
+		serverApps.Stop(Seconds(1000.0));
 	}
 
 	for (uint32_t i = NUM_OF_SERVERS; i < NUM_OF_NODES; i++) {
-		uint32_t rand_x = rand() % 100;
-		uint32_t rand_y = rand() % 100;
+		uint32_t rand_x = rand() % 1000 + 10;
+		uint32_t rand_y = rand() % 500 + 10;
 		positions[i][0] = rand_x;
 		positions[i][1] = rand_y;
 	}
 
-	map<string, vector<string>> graphDict;
-	for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
-		vector<string> adjVector;
-		ostringstream i2Str;
-		i2Str << i;
+	vector<vector<int>> numberOfHops(requests.size(), vector<int>(NUM_OF_SERVERS));
+	for (uint32_t i = 0; i < requests.size(); i++) {
+		vector<vector<int>> distFrom = dijkstra(adjMatrix, requests[i].from+NUM_OF_SERVERS, NUM_OF_NODES);
+		vector<vector<int>> distTo = dijkstra(adjMatrix, requests[i].to+NUM_OF_SERVERS, NUM_OF_NODES);
 		for (uint32_t j = 0; j < NUM_OF_SERVERS; j++) {
-			if (adjMatrix[i][j] == 1) {
-				ostringstream j2Str;
-				j2Str << j;
-				adjVector.push_back(j2Str.str());
-			}
-		}
-		graphDict[i2Str.str()] = adjVector;
-	}
-
-	map<string, map<string, int>> numberOfHops;
-	for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
-		ostringstream i2Str;
-		i2Str << i;
-		for (uint32_t j = 0; j < NUM_OF_SERVERS; j++) {
-			ostringstream j2Str;
-			j2Str << j;
-			numberOfHops[i2Str.str()][j2Str.str()] = findShortestPath(graphDict, i2Str.str(), j2Str.str(), vector<string>()).size();
+			numberOfHops[i][j] = 2 * distFrom[j].size() + distTo[j].size();
 		}
 	}
 
-	for (uint32_t i = NUM_OF_SERVERS; i < NUM_OF_NODES; i++) {
-		int closestServerIdx = getClosestServerIdx(i, NUM_OF_SERVERS, positions);
+	requests = simulate(requests, numberOfHops);
+//	int totalCost = getTotalCost(numberOfHops);
+//	printf("%d\n", totalCost);
+//	vector<int> allCosts = getAllCosts(numberOfHops);
+//	sort(allCosts.begin(), allCosts.end());
+//	printf("%d\n", allCosts[0]);
 
-		ostringstream server2Str;
-		server2Str << closestServerIdx;
-		clients.push_back(Client(server2Str.str()));
+	for (uint32_t i = 0; i < requests.size(); i++) {
+		vector<int> pairVector (2);
+		pairVector[0] = requests[i].from;
+		pairVector[1] = requests[i].to;
+		vector<int> args;
+		args.push_back(pairVector[0]+NUM_OF_SERVERS);
+		args.push_back(pairVector[1]+NUM_OF_SERVERS);
+		Simulator::Schedule(Seconds(4 * i + 1), updateNodeColors, false);
+		Simulator::Schedule(Seconds(4 * i + 1), updateNodeSizes, args);
+		vector<vector<int>> path = dijkstra(adjMatrix, pairVector[0]+NUM_OF_SERVERS, NUM_OF_NODES);
+		UdpEchoServerHelper echoServer(9);
+		ApplicationContainer serverApps = echoServer.Install(nodes.Get(pairVector[1]+NUM_OF_SERVERS));
+		serverApps.Start(Seconds(4 * i + 1));
+		serverApps.Stop(Seconds(4 * i + 2));
+
+		UdpEchoClientHelper echoClient(interfaceVector[path[pairVector[1]+NUM_OF_SERVERS].back()][pairVector[1]+NUM_OF_SERVERS].GetAddress(1), 9);
+		echoClient.SetAttribute ("MaxPackets", UintegerValue(1));
+		echoClient.SetAttribute ("Interval", TimeValue(Seconds (1)));
+		echoClient.SetAttribute ("PacketSize", UintegerValue(1024));
+		ApplicationContainer clientApps = echoClient.Install(nodes.Get(pairVector[0]+NUM_OF_SERVERS));
+		clientApps.Start(Seconds(4 * i + 1));
+		clientApps.Stop(Seconds(4 * i + 2));
+
+		args.push_back(requests[i].cacheKey);
+		Simulator::Schedule(Seconds(4 * i + 3), updateNodeColors, true);
+		Simulator::Schedule(Seconds(4 * i + 3), updateNodeSizes, args);
+		UdpEchoClientHelper echoClient2(interfaceVector[path[requests[i].cacheKey].back()][requests[i].cacheKey].GetAddress(1), 9999);
+		echoClient2.SetAttribute ("MaxPackets", UintegerValue(1));
+		echoClient2.SetAttribute ("Interval", TimeValue(Seconds (1)));
+		echoClient2.SetAttribute ("PacketSize", UintegerValue(1024));
+		ApplicationContainer clientApps2 = echoClient2.Install(nodes.Get(pairVector[0]+NUM_OF_SERVERS));
+		clientApps2.Start(Seconds(4 * i + 3));
+		clientApps2.Stop(Seconds(4 * i + 4));
+
 	}
 
-	vector<string> client2Cache = simulate(clients, caches, numberOfHops);
+    anim = new AnimationInterface ("anim_first.xml");
+	resourceOnlineCloudId = anim->AddResource ("/home/lenovo/source/ns-3.29/utils/icons/cloud_online.png");
+	resourceOfflineCloudId = anim->AddResource ("/home/lenovo/source/ns-3.29/utils/icons/cloud_offline.png");
+	resourceClientId = anim->AddResource ("/home/lenovo/source/ns-3.29/utils/icons/client.png");
 
 	for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
-		ostringstream i2Str;
-		i2Str << i;
-		allCaches.push_back(i2Str.str());
-	}
-
-	// Evaluate all costs and compare it with the best cost found by the algorithm
-	/*
-	vector<int> allCosts = getAllCosts(clients, caches, numberOfHops);
-	sort(allCosts.begin(), allCosts.end());
-	int totalCost = getTotalCost(caches, numberOfHops, client2Cache);
-	cout << totalCost;
-	*/
-
-	for (uint32_t i = NUM_OF_SERVERS; i < NUM_OF_NODES; i++) {
-		istringstream nodeKeyStr(clients[i-NUM_OF_SERVERS].nodeKey);
-		int nodeKey;
-		nodeKeyStr >> nodeKey;
-		NetDeviceContainer devices = p2p.Install(nodes.Get(i), nodes.Get(nodeKey));
-
-		if (ipCounter1 < 255)
-			ipCounter1++;
-		else if (ipCounter2 < 255)
-			ipCounter2++;
+		anim->SetConstantPosition(nodes.Get(i), positions[i][0], positions[i][1]);
+		if (caches[i].isOpen)
+			anim->UpdateNodeImage(i, resourceOnlineCloudId);
 		else
-			ipCounter3++;
-		ostringstream ipStream;
-		ipStream << ipCounter3;
-		ipStream << ".";
-		ipStream << ipCounter2;
-		ipStream << ".";
-		ipStream << ipCounter1;
-		ipStream << ".";
-		ipStream << ipCounter0;
-
-		ipv4.SetBase (ns3::Ipv4Address(ipStream.str().c_str()), "255.255.255.0");
-		Ipv4InterfaceContainer interfaces = ipv4.Assign (devices);
-
-		if (client2Cache[i-NUM_OF_SERVERS] != nodeKeyStr.str()) {
-			vector<string> path = findShortestPath(graphDict, nodeKeyStr.str(), client2Cache[i-NUM_OF_SERVERS], vector<string>());
-			// TODO use keys instead of indexes
-			istringstream cacheKeyStr(client2Cache[i-NUM_OF_SERVERS]);
-			int cacheKey;
-			cacheKeyStr >> cacheKey;
-			NetDeviceContainer devices2 = p2p.Install(nodes.Get(nodeKey), nodes.Get(cacheKey));
-			ostringstream s3, s4;
-
-			if (ipCounter1 < 255)
-				ipCounter1++;
-			else if (ipCounter2 < 255)
-				ipCounter2++;
-			else
-				ipCounter3++;
-			ostringstream ipStream;
-			ipStream << ipCounter3;
-			ipStream << ".";
-			ipStream << ipCounter2;
-			ipStream << ".";
-			ipStream << ipCounter1;
-			ipStream << ".";
-			ipStream << ipCounter0;
-
-			ipv4.SetBase (ns3::Ipv4Address(ipStream.str().c_str()), "255.255.255.0");
-			Ipv4InterfaceContainer interfaces2 = ipv4.Assign (devices2);
-			Ipv4GlobalRoutingHelper::RecomputeRoutingTables();
-
-			UdpEchoClientHelper echoClient(interfaces2.GetAddress(1), 9999);
-			echoClient.SetAttribute ("MaxPackets", UintegerValue(200));
-			echoClient.SetAttribute ("Interval", TimeValue(Seconds (1)));
-			echoClient.SetAttribute ("PacketSize", UintegerValue(1024));
-			ApplicationContainer clientApps = echoClient.Install(nodes.Get(i));
-			clientApps.Start(Seconds(2.0));
-			clientApps.Stop(Seconds(10.0));
-		}
-		else {
-			Ipv4GlobalRoutingHelper::RecomputeRoutingTables();
-			UdpEchoClientHelper echoClient(interfaces.GetAddress(1), 9999);
-			echoClient.SetAttribute ("MaxPackets", UintegerValue(200));
-			echoClient.SetAttribute ("Interval", TimeValue(Seconds (1)));
-			echoClient.SetAttribute ("PacketSize", UintegerValue(1024));
-			ApplicationContainer clientApps = echoClient.Install(nodes.Get(i));
-			clientApps.Start(Seconds(2.0));
-			clientApps.Stop(Seconds(10.0));
-		}
+			anim->UpdateNodeImage(i, resourceOfflineCloudId);
+	}
+	for (uint32_t i = NUM_OF_SERVERS; i < NUM_OF_NODES; i++) {
+		anim->SetConstantPosition(nodes.Get(i), positions[i][0], positions[i][1]);
+		anim->UpdateNodeImage(i, resourceClientId);
 	}
 
-// 	  dump config
-//    p2p.EnablePcapAll ("test");
+//// 	dump config
+////  p2p.EnablePcapAll ("test");
 
-    AnimationInterface anim("anim_first.xml");
-	for (uint8_t i = 0; i < NUM_OF_SERVERS; i++) {
-		anim.SetConstantPosition(nodes.Get(i), positions[i][0], positions[i][1]);
-		anim.UpdateNodeColor(i, 255, 0, 0);
-	}
-	for (uint8_t i = NUM_OF_SERVERS; i < NUM_OF_NODES; i++) {
-		anim.SetConstantPosition(nodes.Get(i), positions[i][0], positions[i][1]);
-		anim.UpdateNodeColor(i, 255, 255, 255);
-
-		istringstream cacheKeyStr(client2Cache[i - NUM_OF_SERVERS]);
-		int cacheKey;
-		cacheKeyStr >> cacheKey;
-		anim.UpdateNodeColor(cacheKey, 0, 255, 0);
-	}
-
-    Simulator::Run ();
-    Simulator::Destroy ();
+	Ipv4GlobalRoutingHelper::PopulateRoutingTables();
+    Simulator::Run();
+    Simulator::Destroy();
+    delete anim;
 
     return 0;
 }
