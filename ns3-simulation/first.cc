@@ -16,12 +16,13 @@
 #include <limits>
 #include <vector>
 #include <map>
+#include <numeric>
 
 using namespace ns3;
 using namespace std;
 
 NS_LOG_COMPONENT_DEFINE ("FirstExample");
-const int NUM_OF_SERVERS = 14;
+const int NUM_OF_SERVERS = 10;
 const int NUM_OF_NODES = 100;
 const int NUM_OF_REQUESTS_PER_CLIENT = 2;
 
@@ -227,53 +228,77 @@ void getCombinations(int offset, int k) {
 	}
 }
 
-//vector<int> getAllCosts(vector<vector<int>> c) {
-//	for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
-//		getCombinations(0, i+1);
-//	}
-//	vector<int> allCosts;
-//	for (uint32_t i = 0; i < allCombinations.size(); i++) {
-//		vector<int> D2 (requests.size());
-//		fill(D2.begin(), D2.end(), -1);
-//		for (uint32_t j = 0; j < D2.size(); j++) {
-//			for (uint32_t k = 0; k < caches.size(); k++) {
-//				for (uint32_t l = 0; l < allCombinations[i].size(); l++) {
-//					if (caches[k].nodeKey == allCombinations[i][l]) {
-//						if (D2[j] == -1 || c[j][caches[k].nodeKey]< c[j][D2[j]])
-//							D2[j] = caches[k].nodeKey;
-//					}
-//				}
-//			}
-//		}
-//
-//		int cost = 0;
-//		for (uint32_t j = 0; j < allCombinations[i].size(); j++) {
-//			cost += caches[j].initialCost;
-//		}
-//		for (uint32_t j = 0; j < D2.size(); j++) {
-//			if (D2[j] != -1) {
-//				cost += c[j][D2[j]];
-//			}
-//		}
-//		if (cost > 0)
-//			allCosts.push_back(cost);
-//	}
-//	return allCosts;
-//}
-//
-//int getTotalCost(vector<vector<int>> c) {
-//	int cost = 0;
-//	for (uint32_t i = 0; i < caches.size(); i++) {
-//		if (caches[i].isOpen)
-//			cost += caches[i].initialCost;
-//	}
-//	for (uint32_t i = 0; i < requests.size(); i++) {
-//		if (requests[i].cacheKey != -1) {
-//			cost += c[i][requests[i].cacheKey];
-//		}
-//	}
-//	return cost;
-//}
+pair<vector<vector<int>>, vector<int>> getAllCosts(int numOfRequests, vector<vector<int>> c) {
+	for (uint32_t i = 0; i < NUM_OF_SERVERS; i++) {
+		getCombinations(0, i+1);
+	}
+	vector<int> allCosts;
+	vector<vector<int>> DVector;
+	for (uint32_t i = 0; i < allCombinations.size(); i++) {
+		vector<int> D (numOfRequests);
+		fill(D.begin(), D.end(), -1);
+		for (uint32_t j = 0; j < D.size(); j++) {
+			for (uint32_t k = 0; k < caches.size(); k++) {
+				for (uint32_t l = 0; l < allCombinations[i].size(); l++) {
+					if (caches[k].nodeKey == allCombinations[i][l]) {
+						if (D[j] == -1 || c[j][caches[k].nodeKey]< c[j][D[j]])
+							D[j] = caches[k].nodeKey;
+					}
+				}
+			}
+		}
+
+		int cost = 0;
+		for (uint32_t j = 0; j < allCombinations[i].size(); j++) {
+			cost += caches[j].initialCost;
+		}
+		for (uint32_t j = 0; j < D.size(); j++) {
+			if (D[j] != -1) {
+				cost += c[j][D[j]];
+			}
+		}
+		if (cost > 0) {
+			DVector.push_back(D);
+			allCosts.push_back(cost);
+		}
+	}
+	return pair<vector<vector<int>>, vector<int>> (DVector, allCosts);
+}
+
+int getRandomCost(uint32_t numOfRequests, uint32_t numOfCaches, vector<vector<int>> c) {
+	set<int> openCaches;
+	int cost = 0;
+	while (openCaches.size() < numOfCaches) {
+		openCaches.insert(rand() % NUM_OF_SERVERS);
+	}
+	Cache cache(-1);
+	for (uint32_t i = 0; i < openCaches.size(); i++) {
+		cost += cache.initialCost;
+	}
+	for (uint32_t i = 0; i < numOfRequests; i++) {
+		int minCost = INT_MAX;
+		set <int> :: iterator itr;
+		for (itr = openCaches.begin(); itr != openCaches.end(); itr++) {
+			minCost = min(minCost, c[i][*itr]);
+		}
+		cost += minCost;
+	}
+	return cost;
+}
+
+int getTotalCost(vector<Request> requests, vector<vector<int>> c) {
+	int cost = 0;
+	for (uint32_t i = 0; i < caches.size(); i++) {
+		if (caches[i].isOpen)
+			cost += caches[i].initialCost;
+	}
+	for (uint32_t i = 0; i < requests.size(); i++) {
+		if (requests[i].cacheKey != -1) {
+			cost += c[i][requests[i].cacheKey];
+		}
+	}
+	return cost;
+}
 
 vector<vector<int>> createScaleFreeNetwork(uint32_t N, uint32_t m0) {
 	uint32_t k_tot = 0; //d = 3;
@@ -369,8 +394,7 @@ void updateNodeSizes(vector<int> args) {
 	}
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     LogComponentEnable ("UdpEchoClientApplication", LOG_LEVEL_INFO);
     LogComponentEnable ("UdpEchoServerApplication", LOG_LEVEL_INFO);
 
@@ -381,7 +405,7 @@ int main(int argc, char *argv[])
 
     Ipv4AddressHelper ipv4;
 	//Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting", BooleanValue(false));
-    srand(5);
+    srand(time(NULL));
 
 	vector<vector<int>> adjMatrix = createScaleFreeNetwork(NUM_OF_NODES, NUM_OF_SERVERS/4);
 	NodeContainer nodes;
@@ -400,12 +424,18 @@ int main(int argc, char *argv[])
 			if (adjMatrix[i][j] == 1) {
 				NetDeviceContainer devices = p2p.Install(nodes.Get(i), nodes.Get(j));
 
-				if (ipCounter1 < 255)
+				if (ipCounter1 < 255) {
 					ipCounter1++;
-				else if (ipCounter2 < 255)
+				}
+				else if (ipCounter2 < 255) {
 					ipCounter2++;
-				else
+					ipCounter1 = 0;
+				}
+				else {
 					ipCounter3++;
+					ipCounter2 = 0;
+					ipCounter1 = 0;
+				}
 				ostringstream ipStream;
 				ipStream << ipCounter3;
 				ipStream << ".";
@@ -445,20 +475,44 @@ int main(int argc, char *argv[])
 	}
 
 	vector<vector<int>> numberOfHops(requests.size(), vector<int>(NUM_OF_SERVERS));
+	vector<vector<int>> rawNumberOfHops(requests.size(), vector<int>(NUM_OF_SERVERS));
+	vector<int> numberOfHopsNoCache(requests.size());
 	for (uint32_t i = 0; i < requests.size(); i++) {
 		vector<vector<int>> distFrom = dijkstra(adjMatrix, requests[i].from+NUM_OF_SERVERS, NUM_OF_NODES);
 		vector<vector<int>> distTo = dijkstra(adjMatrix, requests[i].to+NUM_OF_SERVERS, NUM_OF_NODES);
 		for (uint32_t j = 0; j < NUM_OF_SERVERS; j++) {
 			numberOfHops[i][j] = 2 * distFrom[j].size() + distTo[j].size();
+			rawNumberOfHops[i][j] = distFrom[j].size();
 		}
+		numberOfHopsNoCache[i] = distFrom[requests[i].to+NUM_OF_SERVERS].size();
 	}
 
 	requests = simulate(requests, numberOfHops);
-//	int totalCost = getTotalCost(numberOfHops);
-//	printf("%d\n", totalCost);
-//	vector<int> allCosts = getAllCosts(numberOfHops);
-//	sort(allCosts.begin(), allCosts.end());
-//	printf("%d\n", allCosts[0]);
+	int noCacheCost = accumulate(numberOfHopsNoCache.begin(), numberOfHopsNoCache.end(), 0);
+	printf("No cache cost: %d\n", noCacheCost);
+	int totalCost = getTotalCost(requests, rawNumberOfHops);
+	printf("Optimized cost: %d\n", totalCost);
+	int numOfOpenCaches = 0;
+	for (uint32_t i = 0; i < caches.size(); i++) {
+		if (caches[i].isOpen)
+			numOfOpenCaches++;
+	}
+	int randCost = getRandomCost(requests.size(), NUM_OF_SERVERS/3, rawNumberOfHops);
+	printf("Random cost: %d\n", randCost);
+	printf("Number of open caches cost: %d\n", numOfOpenCaches);
+//	pair<vector<vector<int>>, vector<int>> allCosts = getAllCosts(requests.size(), rawNumberOfHops);
+//	sort(allCosts.second.begin(), allCosts.second.end());
+//	printf("Best cost: %d\n", allCosts.second[0]);
+//	int randIdx = rand() % allCosts.second.size();
+//	printf("Random cost: %d\n", allCosts.second[randIdx]);
+//	for (uint32_t i = 0; i < caches.size(); i++) {
+//		caches[i].isOpen = false;
+//	}
+//	for (uint32_t i = 0; i < requests.size(); i++) {
+//		requests[i].cacheKey = allCosts.first[randIdx][i];
+//		caches[requests[i].cacheKey].isOpen = true;
+//	}
+
 
 	for (uint32_t i = 0; i < requests.size(); i++) {
 		vector<int> pairVector (2);
@@ -496,7 +550,7 @@ int main(int argc, char *argv[])
 
 	}
 
-    anim = new AnimationInterface ("anim_first.xml");
+    anim = new AnimationInterface ("anim_test.xml");
 	resourceOnlineCloudId = anim->AddResource ("/home/lenovo/source/ns-3.29/utils/icons/cloud_online.png");
 	resourceOfflineCloudId = anim->AddResource ("/home/lenovo/source/ns-3.29/utils/icons/cloud_offline.png");
 	resourceClientId = anim->AddResource ("/home/lenovo/source/ns-3.29/utils/icons/client.png");
@@ -513,8 +567,8 @@ int main(int argc, char *argv[])
 		anim->UpdateNodeImage(i, resourceClientId);
 	}
 
-//// 	dump config
-////  p2p.EnablePcapAll ("test");
+// 	dump config
+//  p2p.EnablePcapAll ("test");
 
 	Ipv4GlobalRoutingHelper::PopulateRoutingTables();
     Simulator::Run();
